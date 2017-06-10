@@ -1,0 +1,195 @@
+from time import sleep   #Biblioteca Sleep de Time para poder criar "delay" no código Python
+import datetime
+import telegram  #Biblioteca Telegram, instalda pelo Python-PIP
+import logging
+from threading import Thread
+from multiprocessing import Queue
+from security import Security
+from telegram import InlineKeyboardButton
+import os
+import func as f
+import unicodedata
+import subprocess
+
+#Faz os imports de bibliotecas para tratar erros de conexão URL
+try:
+    from urllib.error import URLEror
+except ImportError:
+    from urllib2 import URLError
+	
+def main():
+
+    update_id = None  #Variavél update_id - Usada pelo Telegram
+
+	#Objeto bot inserindo o Token fornecido pelo The BotFather
+    bot = telegram.Bot('O TOKEN DO SEU BOT') 
+    
+    print 'I am listening ...'
+	
+	
+	while True:
+		try:
+			update_id = raspiBot(bot, update_id)
+			
+		except telegram.TelegramError as e:
+			if e.message in ('Bad Gateway', 'Time out'):  #Se ocorrer algum problema, lentidão, por ex.
+				sleep(1)  #Espera 1 segundo...
+			else:
+				raise e
+	
+		except URLError as e:
+			sleep(1)  #Há problemas de rede na execussão...
+			
+def raspiBot(bot, update_id):
+	#reqisitos atualizações depois da ultima id de update - update_id
+
+	# bot.getUpdate(offset, timeout) - offset eh o ponto de partida em
+	# que começa a procurar novas atualizações de menssagens,
+	# timeout eh o tempo minimo de espera para retorno de requisição de resposta.
+    for update in bot.getUpdates(offset=update_id, time_out=10):
+
+        chat_id = update.message.chat_id    #O chat_id eh a id do chat de comunicação Telegram eh necessario para o bot identificar a conversa e gerar e enviar a resposta
+        update_id = update.update_id + 1    #Atualiza o indice update_id - para referenciar novas mensagens
+        command = update.message['text'] #Captura a mensagem de texto enviada ao bot no dado chat_id 
+
+        
+        print 'Command -> %s' % command
+        #print str(chat_id)
+        
+        response = f.action(command, chat_id, bot)
+        
+        print 'RasPI   -> %s' % response
+        
+
+        if response == 'start':
+            bot.sendMessage(chat_id, text = 'Bem Vindo ! \n Aqui estão algumas funções\n'+
+                            'de vigilância e monitoramento residêncial do sistema.\n'+
+                            'Os comandos via teclado podem ser enviados por voz ou mensagens\n'+
+                            'de texto.', reply_markup=keyboardCam())
+       
+        elif response == 'img':
+            bot.sendPhoto(chat_id, open('/home/pi/Desktop/TELEGRAM6/frames/img0.jpg', 'rb'))       
+
+        elif response == 'video':
+            bot.send_video(chat_id, open('/home/pi/Desktop/TELEGRAM6/videos/video.mp4', 'rb'))        
+
+        elif response == 'mdstart':
+            bot.sendMessage(chat_id, 'Monitoramento com video Iniciado !')
+
+        elif response == 'mdfstart':
+            bot.sendMessage(chat_id, 'Monitoramento com foto Iniciado !')
+
+        elif response == 'mdpause':
+            bot.sendMessage(chat_id, 'Monitoramento Cancelado !')
+
+        elif response == 'mdnotwork':
+            bot.sendMessage(chat_id, 'Monitoramento Inativo !')
+        
+        else:
+            bot.sendMessage(chat_id, response)
+
+        return update_id
+    
+
+if __name__ == '__main__':
+    main()
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	-----------------------------------------------------
+	
+	
+	
+	import unicodedata
+from PIL import Image
+import base64
+import time
+import os
+import sys
+from camera import Camera
+from security import Security
+from threading import Thread
+import threading
+from multiprocessing import Queue
+from subprocess import check_output
+from time import sleep
+
+import RPi.GPIO as GPIO
+from time import *
+
+cam = Camera()
+sec = Security()
+                
+
+def action(instruction, chat_id, bot):
+        
+        
+        if "/start" == instruction.lower():
+                resp_string = 'start'
+
+	elif "ola" in instruction.lower():
+                resp_string = "Ola . O que voce precisa ?" 
+
+	elif "foto" == instruction.lower() or "imagem" == instruction.lower():  
+                cam.takePictureServo('center')
+                resp_string = 'img'
+
+        elif "foto esquerda" == instruction.lower():
+                cam.takePictureServo('left')
+                resp_string = 'img'
+
+        elif "foto direita" == instruction.lower():
+                cam.takePictureServo('right')
+                resp_string = 'img'
+		
+	elif "video esquerda" == instruction.lower():
+                bot.sendMessage(chat_id, "Aguarde...")
+                cam.servoMotionVideo('left')              
+                resp_string = "video"
+
+        elif "video direita" == instruction.lower():
+                bot.sendMessage(chat_id, "Aguarde...")
+                cam.servoMotionVideo('right')
+                resp_string = "video"
+
+        elif "monitorar com video" == instruction.lower():
+               
+                if sec.getter() == True:
+                        sec.setter(False)
+                        sleep(0.5)
+
+
+                sec.setter(True)       
+                myThread = Thread(target=sec.motionDetect, args=(chat_id, bot))
+                myThread.start()
+                resp_string = "mdstart"
+                
+        elif "monitorar com foto" == instruction.lower():
+  
+                if sec.getter() == True:
+                        sec.setter(False)
+                        sleep(0.5)
+
+
+                sec.setter(True)       
+                myThread = Thread(target=sec.motionDetectPicture, args=(chat_id, bot))
+                myThread.start()
+                resp_string = "mdfstart"
+                
+        elif "cancelar monitoramento" == instruction.lower():
+                if sec.getter() == True:
+                        sec.setter(False)
+                        resp_string = 'mdpause'
+                else:
+                        resp_string = 'mdnotwork'
+                
+	else:
+                resp_string = "Deculpe, não entendi..."
+        
+	return resp_string
